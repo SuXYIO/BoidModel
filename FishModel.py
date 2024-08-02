@@ -4,6 +4,16 @@ from numpy import sqrt, pi
 from math import sin, cos
 from numpy.random import random as rand
 
+class dot:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+class lim:
+    def __init__(self, l, u):
+        self.l = l
+        self.u = u
+
 SWARMSIZE = 128
 SPEED = 0.5
 LOCALRANGE = 1.0
@@ -20,21 +30,19 @@ WEIGHTTIGHT = 20.0
 WEIGHTBOUND = 10.0
 
 TICKRATE = 0.025
-XLIM = [-16, 16]
-YLIM = [-16, 16]
+XLIM = lim(-16, 16)
+YLIM = lim(-16, 16)
 ATTRACTORCOUNT = 1
 attrcenter = [[0, 0]]
 attrr = [10.0]
 attrstep = pi / 128
 
-# Swarm coords
-swarmX = []
-swarmY = []
+# Swarm dots
+swarm = []
 # Swarm vectors
-swarmVX = []
-swarmVY = []
+swarmV = []
 # Attractors
-attr = [[4.0, 0.0]]
+attr = [dot(4, 0)]
 attrT = []
 
 # Gen rand positive or negative (1 or -1)
@@ -61,17 +69,17 @@ def updateFish(ind):
     for i in range(SWARMSIZE):
         if i == ind:
             continue
-        if d := euclidDist(swarmX[ind], swarmY[ind], swarmX[i], swarmY[i]) <= LOCALRANGE:
+        if d := euclidDist(swarm[ind].x, swarm[ind].y, swarm[i].x, swarm[i].y) <= LOCALRANGE:
             ld.append(d)
-            lx.append(swarmX[i])
-            ly.append(swarmY[i])
-            lvx.append(swarmVX[i])
-            lvy.append(swarmVY[i])
+            lx.append(swarm[i].x)
+            ly.append(swarm[i].y)
+            lvx.append(swarmV[i].x)
+            lvy.append(swarmV[i].y)
     # Find local TIGHT attrs
     for i in range(ATTRACTORCOUNT):
-        if euclidDist(swarmX[ind], swarmY[ind], attr[i][0], attr[i][1]) <= TIGHTRANGE:
-            tvx += -1 * (swarmX[ind] + attr[i][0]) / 2 * WEIGHTTIGHT
-            tvy += -1 * (swarmY[ind] + attr[i][1]) / 2 * WEIGHTTIGHT
+        if euclidDist(swarm[ind].x, swarm[ind].y, attr[i].x, attr[i].y) <= TIGHTRANGE:
+            tvx += -1 * (swarm[ind].x + attr[i].x) / 2 * WEIGHTTIGHT
+            tvy += -1 * (swarm[ind].y + attr[i].y) / 2 * WEIGHTTIGHT
             weights += WEIGHTTIGHT
 
     # Weighted average
@@ -82,13 +90,13 @@ def updateFish(ind):
         tvy += j * WEIGHTLOCAL
         weights += WEIGHTLOCAL
     # self
-    tvx += swarmVX[ind] * WEIGHTSELF
-    tvy += swarmVY[ind] * WEIGHTSELF
+    tvx += swarmV[ind].x * WEIGHTSELF
+    tvy += swarmV[ind].y * WEIGHTSELF
     weights += WEIGHTSELF
     # attr
     for i in range(ATTRACTORCOUNT):
-        tvx += (attr[i][0] - swarmX[ind]) / euclidDist(swarmX[ind], swarmY[ind], attr[i][0], attr[i][1]) * WEIGHTATTRACTOR
-        tvy += (attr[i][1] - swarmY[ind]) / euclidDist(swarmX[ind], swarmY[ind], attr[i][0], attr[i][1]) * WEIGHTATTRACTOR
+        tvx += (attr[i].x - swarm[ind].x) / euclidDist(swarm[ind].x, swarm[ind].y, attr[i].x, attr[i].y) * WEIGHTATTRACTOR
+        tvy += (attr[i].y - swarm[ind].y) / euclidDist(swarm[ind].x, swarm[ind].y, attr[i].x, attr[i].y) * WEIGHTATTRACTOR
         weights += WEIGHTATTRACTOR
     # local center
     lxs = 0
@@ -101,14 +109,14 @@ def updateFish(ind):
     if xylen != 0:
         lxs /= xylen
         lys /= xylen
-        if euclidDist(swarmX[ind], swarmY[ind], lxs, lys) <= TIGHTRANGE:
+        if euclidDist(swarm[ind].x, swarm[ind].y, lxs, lys) <= TIGHTRANGE:
             # tight
-            tvx += -1 * (lxs - swarmX[ind]) / euclidDist(swarmX[ind], swarmY[ind], lxs, lys) * WEIGHTATTRACTOR
-            tvy += -1 * (lys - swarmY[ind]) / euclidDist(swarmX[ind], swarmY[ind], lxs, lys) * WEIGHTATTRACTOR
+            tvx += -1 * (lxs - swarm[ind].x) / euclidDist(swarm[ind].x, swarm[ind].y, lxs, lys) * WEIGHTATTRACTOR
+            tvy += -1 * (lys - swarm[ind].y) / euclidDist(swarm[ind].x, swarm[ind].y, lxs, lys) * WEIGHTATTRACTOR
         else:
             # center
-            tvx += (lxs - swarmX[ind]) / euclidDist(swarmX[ind], swarmY[ind], lxs, lys) * WEIGHTATTRACTOR
-            tvy += (lys - swarmY[ind]) / euclidDist(swarmX[ind], swarmY[ind], lxs, lys) * WEIGHTATTRACTOR
+            tvx += (lxs - swarm[ind].x) / euclidDist(swarm[ind].x, swarm[ind].y, lxs, lys) * WEIGHTATTRACTOR
+            tvy += (lys - swarm[ind].y) / euclidDist(swarm[ind].x, swarm[ind].y, lxs, lys) * WEIGHTATTRACTOR
             weights += WEIGHTCENTER
 
     if weights != 0:
@@ -116,41 +124,41 @@ def updateFish(ind):
         tvy /= weights
 
     # Give value
-    swarmVX[ind] = tvx
-    swarmVY[ind] = tvy
-    swarmVX[ind] += randpn() * WEIGHTRAND
-    swarmVY[ind] += randpn() * WEIGHTRAND
+    swarmV[ind].x = tvx
+    swarmV[ind].y = tvy
+    swarmV[ind].x += randpn() * WEIGHTRAND
+    swarmV[ind].y += randpn() * WEIGHTRAND
 
     # Move
-    swarmX[ind] += swarmVX[ind] * SPEED
-    swarmY[ind] += swarmVY[ind] * SPEED
+    swarm[ind].x += swarmV[ind].x * SPEED
+    swarm[ind].y += swarmV[ind].y * SPEED
     # Near bound: turn back
-    if swarmX[ind] < XLIM[0] + BOUNDRANGE or swarmX[ind] > XLIM[1] - BOUNDRANGE:
-        swarmVX[ind] *= -1 * WEIGHTBOUND
-    if swarmY[ind] < YLIM[0] + BOUNDRANGE or swarmY[ind] > YLIM[1] - BOUNDRANGE:
-        swarmVY[ind] *= -1 * WEIGHTBOUND
+    if swarm[ind].x < XLIM.l + BOUNDRANGE or swarm[ind].x > XLIM.u - BOUNDRANGE:
+        swarmV[ind].x *= -1 * WEIGHTBOUND
+    if swarm[ind].y < YLIM.l + BOUNDRANGE or swarm[ind].y > YLIM.u - BOUNDRANGE:
+        swarmV[ind].y *= -1 * WEIGHTBOUND
 
 # Update whole swarm
 def updateSwarm():
     for ind in range(SWARMSIZE):
         # Out of bound: rectify
-        if swarmX[ind] < XLIM[0]:
-            swarmX[ind] = XLIM[0] + BOUNDRANGE
-        elif swarmY[ind] < YLIM[0]:
-            swarmY[ind] = YLIM[0] + BOUNDRANGE
-        elif swarmX[ind] > XLIM[1]:
-            swarmX[ind] = XLIM[1] - BOUNDRANGE
-        elif swarmY[ind] > YLIM[1]:
-            swarmY[ind] = YLIM[1] - BOUNDRANGE
+        if swarm[ind].x < XLIM.l:
+            swarm[ind].x = XLIM.l + BOUNDRANGE
+        elif swarm[ind].y < YLIM.l:
+            swarm[ind].y = YLIM.l + BOUNDRANGE
+        elif swarm[ind].x > XLIM.u:
+            swarm[ind].x = XLIM.u - BOUNDRANGE
+        elif swarm[ind].y > YLIM.u:
+            swarm[ind].y = YLIM.u - BOUNDRANGE
         # vector
-        if swarmVX[ind] < XLIM[0]:
-            swarmVX[ind] = XLIM[0]
-        elif swarmVY[ind] < YLIM[0]:
-            swarmVY[ind] = YLIM[0]
-        elif swarmVX[ind] > XLIM[1]:
-            swarmVX[ind] = XLIM[1]
-        elif swarmVY[ind] > YLIM[1]:
-            swarmVY[ind] = YLIM[1]
+        if swarmV[ind].x < XLIM.l:
+            swarmV[ind].x = XLIM.l
+        elif swarmV[ind].y < YLIM.l:
+            swarmV[ind].y = YLIM.l
+        elif swarmV[ind].x > XLIM.u:
+            swarmV[ind].x = XLIM.u
+        elif swarmV[ind].y > YLIM.u:
+            swarmV[ind].y = YLIM.u
     for i in range(SWARMSIZE):
         updateFish(i)
 
@@ -159,16 +167,14 @@ def spinAttractor(ind):
     attrr[ind] += randpn() / 8
     if attrT[ind] >= 2 * pi:
         attrT[ind] %= 2 * pi
-    attr[ind][0] = cos(attrT[ind]) * attrr[ind] + randpn() / 8
-    attr[ind][1] = sin(attrT[ind]) * attrr[ind] + randpn() / 8
+    attr[ind].x = cos(attrT[ind]) * attrr[ind] + randpn() / 8
+    attr[ind].y = sin(attrT[ind]) * attrr[ind] + randpn() / 8
 
 def main():
     # Init fishes
     for i in range(SWARMSIZE):
-        swarmX.append(XLIM[1] * randpn() / INITRANGEFRAC)
-        swarmY.append(YLIM[1] * randpn() / INITRANGEFRAC)
-        swarmVX.append(randpn())
-        swarmVY.append(randpn())
+        swarm.append(dot(XLIM.u * randpn() / INITRANGEFRAC, YLIM.u * randpn() / INITRANGEFRAC))
+        swarmV.append(dot(randpn(), randpn()))
     for i in range(ATTRACTORCOUNT):
         attrT.append(0.0)
 
@@ -178,11 +184,13 @@ def main():
         updateSwarm()
         spinAttractor(0)
         plt.title('Swarm Simulation')
-        plt.xlim(XLIM[0], XLIM[1])
-        plt.ylim(YLIM[0], YLIM[1])
-        plt.plot(swarmX, swarmY, 'b.')
+        plt.xlim(XLIM.l, XLIM.u)
+        plt.ylim(YLIM.l, YLIM.u)
+        x_vals = [dot.x for dot in swarm]
+        y_vals = [dot.y for dot in swarm]
+        plt.plot(x_vals, y_vals, 'b-')
         for i in range(ATTRACTORCOUNT):
-            plt.plot(attr[i][0], attr[i][1], 'g.')
+            plt.plot(attr[i].x, attr[i].y, 'g.')
         plt.draw()
         plt.pause(TICKRATE)
 
