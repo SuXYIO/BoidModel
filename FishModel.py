@@ -3,6 +3,7 @@ from random import sample
 from numpy import sqrt, pi
 from math import sin, cos
 from numpy.random import random as rand
+from matplotlib.backend_bases import MouseButton as pltmouse
 
 class dot:
     def __init__(self, x, y):
@@ -44,6 +45,9 @@ swarmV = []
 # Attractors
 attr = [dot(4, 0)]
 attrT = []
+
+# Interaction control
+moveattr = False
 
 # Gen rand positive or negative (1 or -1)
 def randpn():
@@ -170,6 +174,22 @@ def spinAttractor(ind):
     attr[ind].x = cos(attrT[ind]) * attrr[ind] + randpn() / 8
     attr[ind].y = sin(attrT[ind]) * attrr[ind] + randpn() / 8
 
+def on_move(event):
+    if event.inaxes:
+        global attr
+        if moveattr == True:
+            attr[0].x = event.xdata
+            attr[0].y = event.ydata
+
+def on_click(event):
+    if event.button is pltmouse.LEFT:
+        # toggle moveattr
+        global moveattr
+        if moveattr == False:
+            moveattr = True
+        else:
+            moveattr = False
+
 def main():
     # Init fishes
     for i in range(SWARMSIZE):
@@ -180,9 +200,14 @@ def main():
 
     # Draw plot
     while True:
+        #HACK: This does not support mutiple attractors
+        binding_id = plt.connect('motion_notify_event', on_move)
+        plt.connect('button_press_event', on_click)
+
         plt.cla()
         updateSwarm()
-        spinAttractor(0)
+        if moveattr == False:
+            spinAttractor(0)
         plt.title('Swarm Simulation')
         plt.xlim(XLIM.l, XLIM.u)
         plt.ylim(YLIM.l, YLIM.u)
