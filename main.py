@@ -13,14 +13,19 @@ class lim:
         self.l = l
         self.u = u
 
-SWARMSIZE = 64
+TICKRATE = 0.0125
+XLIM = lim(-8, 8)
+YLIM = lim(-8, 8)
+
+SWARMSIZE = 128
 SPEED = 0.2
-ATTRSPEED = 0.3
+ATTRSPEED = 0.45
 INITRANGEFRAC = 1
 
-localrange = 1.5
+localrange = 1.0
 TIGHTRANGE = 0.8
 BOUNDRANGE = 2.0
+ATTRCENTERFORCEMINDIST = XLIM.u * 3 / 4
 
 WEIGHTLOCALCENTER = 1.5
 WEIGHTLOCALVECTOR = 1.0
@@ -29,16 +34,17 @@ WEIGHTLOCALTIGHT = -3.0
 WEIGHTRAND = 3.0
 WEIGHTATTR = 0.5
 
-RANDTURNFRAC = 1 / 8
-ATTRRANDTURNFRAC = 1 / 2
-ATTRBOUNDRAD = 0.5
-ATTRMAXRAD = 4.0
+WEIGHTATTRCENTER = 1
 
-TICKRATE = 0.0125
-XLIM = lim(-8, 8)
-YLIM = lim(-8, 8)
+RANDTURNFRAC = 1 / 8
+ATTRRANDTURNFRAC = 1 / 1
+ATTRBOUNDRAD = 0.9
+ATTRMAXRAD = 2.0
+SHIFTFRAC = 2.0
+ATTRSHIFTFRAC = 4.0
 
 RECTIFYFUNCTION = lambda x: tanh(x) * 2
+ATTRRECTIFYFUNCTION = lambda x: x
 
 # Swarm pnts
 swarm = []
@@ -187,53 +193,60 @@ def updateFish(ind):
 def updateSwarm():
     for ind in range(SWARMSIZE):
         # Out of bound: reverse coords (finite universe)
+        SHIFT = random() * 4.0
         # -
         if swarm[ind].x < XLIM.l:
-            swarm[ind].x = XLIM.u
+            swarm[ind].x = XLIM.u - SHIFT
         if swarm[ind].y < YLIM.l:
-            swarm[ind].y = YLIM.u
+            swarm[ind].y = YLIM.u - SHIFT
         # +
         if swarm[ind].x > XLIM.u:
-            swarm[ind].x = XLIM.l
+            swarm[ind].x = XLIM.l + SHIFT
         if swarm[ind].y > YLIM.u:
-            swarm[ind].y = YLIM.l
+            swarm[ind].y = YLIM.l + SHIFT
         updateFish(ind)
 
 # Update attractor
 #WARN: Might not adapt to new XLIM and YLIMs
+#BUG: Attr point move incorrect
 def updateAttr():
     # Vector turn
-    theta = random() * ATTRRANDTURNFRAC
-    vx1 = attrV.x * cos(theta) - attrV.y * sin(theta)
-    vy1 = attrV.x * sin(theta) + attrV.y * cos(theta)
+    theta = randpn() * pi * ATTRRANDTURNFRAC
+    v1 = pnt()
+    v1.x = attrV.x * cos(theta) - attrV.y * sin(theta)
+    v1.y = attrV.x * sin(theta) + attrV.y * cos(theta)
 
-    # Center vector middle point
+    # Center rectify
     cent = pnt(XLIM.u + XLIM.l, YLIM.u + YLIM.l)
-    if euclidDist(attr.x, attr.y, cent.x, cent.y) > XLIM.u * 7 / 8:
-        '''
-        relcentvec = pnt()
-        relcentvec.x = attr.x - cent.x
-        relcentvec.y = attr.y - cent.x
-        vx1 = (vx1 + relcentvec.x * 1 / 2) / 2
-        vy1 = (vy1 + relcentvec.y * 1 / 2) / 2
-        '''
-        theta = pi / 3
+    '''
+    # Turn
+    if euclidDist(attr.x, attr.y, cent.x, cent.y) > ATTRCENTERFORCEMINDIST:
+        theta = pi / 2
         vx1 += attrV.x * cos(theta) - attrV.y * sin(theta)
         vy1 += attrV.x * sin(theta) + attrV.y * cos(theta)
+    '''
+    # Center force
+    centdist = euclidDist(attr.x, attr.y, cent.x, cent.y)
+    relcentvec = pnt(cent.x - attr.x, cent.y - attr.y)
+    relcentvec.x *= WEIGHTATTRCENTER 
+    relcentvec.y *= WEIGHTATTRCENTER
 
-    attrV.x = vx1
-    attrV.y = vy1
+    attrV.x += relcentvec.x
+    attrV.y += relcentvec.y
+
+    attrV.x = v1.x
+    attrV.y = v1.y
 
     # Vector rectify
-    attrV.x = RECTIFYFUNCTION(attrV.x)
-    attrV.y = RECTIFYFUNCTION(attrV.y)
+    attrV.x = ATTRRECTIFYFUNCTION(attrV.x)
+    attrV.y = ATTRRECTIFYFUNCTION(attrV.y)
 
     # Move
     attr.x += attrV.x * ATTRSPEED
     attr.y += attrV.y * ATTRSPEED
 
     # Out of bound: reverse coords (finite universe)
-    SHIFT = random() * 4.0
+    SHIFT = random() * SHIFTFRAC
     # -
     if attr.x < XLIM.l:
         attr.x = XLIM.u - SHIFT
