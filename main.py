@@ -1,262 +1,221 @@
-from matplotlib.backend_bases import MouseButton
-from matplotlib import pyplot as plt
 from random import sample, random
-from math import sqrt, tanh, sin, cos, pi
+import math
 
+import turtle as tur
+import logging
+
+from matplotlib.colors import BoundaryNorm
+
+# point (2d)
 class pnt:
     def __init__(self, x = 0.0, y = 0.0):
         self.x = x
         self.y = y
 
+# vector (2d)
+class vec:
+    def __init__(self, x = 0.0, y = 0.0):
+        self.x = x
+        self.y = y
+
+# limitation for 2d space
 class lim:
-    def __init__(self, l, u):
-        self.l = l
-        self.u = u
+    def __init__(self, xl, xu, yl, yu):
+        self.xl = xl
+        self.xu = xu
+        self.yl = yl
+        self.yu = yu
 
-TICKRATE = 0.0125
-XLIM = lim(-8, 8)
-YLIM = lim(-8, 8)
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
 
-SWARMSIZE = 128
-SPEED = 0.2
-ATTRSPEED = 0.45
+TICKRATE = 0.1
 INITRANGEFRAC = 1
+VECMAX = math.sqrt(1 / 2)
+LIM = lim(-8, 8, -8, 8)
 
-localrange = 1.0
-TIGHTRANGE = 0.8
-BOUNDRANGE = 2.0
-ATTRCENTERFORCEMINDIST = XLIM.u * 3 / 4
+SWMSIZE = 64
+SPEED = 0.5
 
-WEIGHTLOCALCENTER = 1.5
-WEIGHTLOCALVECTOR = 1.0
-WEIGHTSELFVECTOR = 1.5
-WEIGHTLOCALTIGHT = -3.0
-WEIGHTRAND = 3.0
-WEIGHTATTR = 0.5
+LOCALRANGE = 1.0
+SEPRANGE = 0.6
 
-WEIGHTATTRCENTER = 1
-
-RANDTURNFRAC = 1 / 8
-ATTRRANDTURNFRAC = 1 / 1
-ATTRBOUNDRAD = 0.9
-ATTRMAXRAD = 2.0
-SHIFTFRAC = 2.0
-ATTRSHIFTFRAC = 4.0
-
-RECTIFYFUNCTION = lambda x: tanh(x) * 2
-ATTRRECTIFYFUNCTION = lambda x: x
+WOLD = 0.8
+WSEP = 1.0
+WCOH = 1.0
+WALI = 1.0
+WRND = 0.5
 
 # Swarm pnts
-swarm = []
+swm = []
 # Swarm vectors
-swarmV = []
-# Attractor
-attr = pnt()
-attrV = pnt()
+swmv = []
+
+# Misc
+pen = []
 
 # Options
+# show method ('matplotlib' / 'pygame')
+showmethod = 'matplotlib'
+# bound method ('wrap' / 'bounce')
+boundmethod = 'bounce'
 # Plot local for every fish
 #TEST: This might greatly reduce performance
 localplot = False
-enableattr = False
 
-# Gen rand positive or negative (1 or -1)
+if showmethod == 'matplotlib':
+    from matplotlib import use as pltuse
+    from matplotlib import pyplot as plt
+    from matplotlib.backend_bases import MouseButton
+elif showmethod == 'pygame':
+    import pygame
+    COLORPNT = (0, 0, 255)
+    COLORBG = (0, 0, 0)
+else:
+    logging.error(f'Invalid show method: {showmethod}')
+    exit()
+
 def randpn():
+    """Gen rand positive or negative (1 or -1)"""
     return random() * sample([1, -1], k = 1)[0]
 
-# Euclidian distance (2D)
-def euclidDist(x0, y0, x1, y1):
-    return sqrt((x0 - x1)**2 + (y0 - y1)**2)
+def euclidDist(p0, p1):
+    """Euclidian distance (2D)"""
+    return math.sqrt((p0.x - p1.x)**2 + (p0.y - p1.y)**2)
 
-# Update single fish
-def updateFish(ind):
-    #TEST: Experimental random localrange
-    #localrange = random() * 2
+def meanPnt(pntlist):
+    """Average pnt of pnt list"""
+    mean = pnt()
+    for i in pntlist:
+        mean.x += i.x
+        mean.y += i.y
+    mean.x /= len(pntlist)
+    mean.y /= len(pntlist)
+    return mean
+
+def meanPntW(pntlist, weightlist):
+    """Weighted average pnt of pnt list"""
+    mean = pnt()
+    wsum = 0.0
+    for i in range(len(pntlist)):
+        mean.x += pntlist[i].x * weightlist[i]
+        mean.y += pntlist[i].y * weightlist[i]
+        wsum += weightlist[i]
+    mean.x /= wsum
+    mean.y /= wsum
+    return mean
+
+def relVec(p0, p1):
+    """Relative vector from point to point (2d)"""
+    return pnt(p1.x - p0.x, p1.y - p0.y)
+
+def modVec(v):
+    """The module(length) of vector (2d)"""
+    return math.sqrt(v.x**2 + v.y**2)
+
+def headVec(v):
+    """Calc the heading of vector (2d)"""
+    return math.degrees(math.atan2(v.y, v.x))
+
+# Update single bird
+def updateBird(ind, plotmethod):
+    # Init
+    # define values
     localswm = []
-    localvec = []
+    localswmv = []
     localdist = []
-    tightswm = []
-    tightdist = []
-    localcnt = 0
-    tightcnt = 0
+    # define forces
+    forceold = swmv[ind]
+    forcesep = vec()
+    forcecoh = vec()
+    forceali = vec()
+    forcerand = vec()
 
-    # Get local
-    for i in range(SWARMSIZE):
-        # skip self
+    # Find local
+    #TODO: Use quad-tree search to reduce time complicity from O(n) to O(log n)
+    for i in range(SWMSIZE):
+        # Skip self
         if i == ind:
             continue
-        if d := euclidDist(swarm[ind].x, swarm[ind].y, swarm[i].x, swarm[i].y) <= localrange:
-            localswm.append(swarm[i])
-            localvec.append(swarmV[i])
+        if d := euclidDist(swm[ind], swm[i]):
+            localswm.append(swm[i])
+            localswmv.append(swmv[i])
             localdist.append(d)
-            localcnt += 1
-            if d <= TIGHTRANGE:
-                tightswm.append(swarm[i])
-                tightdist.append(d)
-                tightcnt += 1
 
-    # Plot local
+    # Separate
+    # find the min of local dist
+    mindist = min(localdist)
+    # find the pnts of min dist
+    minpnt = localswm[localdist.index(mindist)]
+    # calc relative vec to minpnt
+    relminpnt = relVec(swm[ind], minpnt)
+    # add force with n / d^2
+    fmindist = SEPRANGE / mindist**2
+    forcesep.x = relminpnt.x * fmindist
+    forcesep.y = relminpnt.y * fmindist
+
+    # Cohesion
+    # calc avg point of local
+    avglocalpnt = meanPnt(localswm)
+    # calc relative vec to avgpnt
+    forcecoh = relVec(swm[ind], avglocalpnt)
+
+    # Align
+    # calc averge vec for local
+    avglocalswmv = meanPnt(localswmv)
+    forceali = meanPnt([swmv[ind], avglocalswmv])
+
+    # Random
+    forcerand = vec(randpn(), randpn())
+
+    # Update own vector
+    # new vec = average of the forces
+    swmv[ind] = meanPntW(
+        [forceold,  forcesep,   forcecoh,   forceali,   forcerand], 
+        [WOLD,      WSEP,       WCOH,       WALI,       WRND]
+    )
+
+    # Move toward vector
+    swm[ind].x += swmv[ind].x * SPEED
+    swm[ind].y += swmv[ind].y * SPEED
+
+    # Bound
+    if boundmethod == 'wrap':
+        # wrap coords (appear on the other side)
+        SHIFT = random() * 0.0
+        if swm[ind].x < LIM.xl:
+            swm[ind].x = LIM.xu - SHIFT
+        if swm[ind].y < LIM.yl:
+            swm[ind].y = LIM.yu - SHIFT
+        if swm[ind].x > LIM.xu:
+            swm[ind].x = LIM.xl + SHIFT
+        if swm[ind].y > LIM.yu:
+            swm[ind].y = LIM.yl + SHIFT
+    elif boundmethod == 'bounce':
+        if swm[ind].x < LIM.xl:
+            swmv[ind].x = abs(swmv[ind].x)
+        elif swm[ind].x > LIM.xu:
+            swmv[ind].x = -abs(swmv[ind].x)
+        if swm[ind].y < LIM.yl:
+            swmv[ind].y = abs(swmv[ind].y)
+        elif swm[ind].y > LIM.yu:
+            swmv[ind].y = -abs(swmv[ind].y)
+
+    # Localplot
+    global localplot
     if localplot == True:
-        localx_vals = [pnt.x for pnt in localswm]
-        localy_vals = [pnt.y for pnt in localswm]
-        plt.plot(localx_vals, localy_vals, 'b.-')
+        if plotmethod == 'matplotlib':
+            #TODO: Reduce duplicate lines
+            localx_vals = [pnt.x for pnt in localswm]
+            localy_vals = [pnt.y for pnt in localswm]
+            plt.plot(localx_vals, localy_vals, 'b.-')
+        elif plotmethod == 'pygame':
+            pass
 
-    # Calc local stuff
-    # local center point
-    centpt = pnt()
-    # local average vector
-    avgvec = pnt()
-    # relative vector to local center
-    relcentvec = pnt()
-    # tight center point
-    tightpt = pnt()
-    # relative vector to tight center
-    reltightvec = pnt()
-    # local
-    if localcnt > 0:
-        for i in range(localcnt):
-            centpt.x += localswm[i].x * localdist[i]
-            centpt.y += localswm[i].y * localdist[i]
-            avgvec.x += localvec[i].x
-            avgvec.y += localvec[i].y
-        centpt.x /= localcnt
-        centpt.y /= localcnt
-        avgvec.x /= localcnt
-        avgvec.y /= localcnt
-        relcentvec.x = (centpt.x - swarm[ind].x)
-        relcentvec.y = (centpt.y - swarm[ind].y)
-    # tight
-    if tightcnt > 0:
-        for i in range(tightcnt):
-            tightpt.x += tightswm[i].x * 1 / tightdist[i]
-            tightpt.y += tightswm[i].y * 1 / tightdist[i]
-        tightpt.x /= tightcnt
-        tightpt.y /= tightcnt
-        reltightvec.x = (tightpt.x - swarm[ind].x)
-        reltightvec.y = (tightpt.y - swarm[ind].y)
-
-    # Attractor force
-    attrdist = euclidDist(swarm[ind].x, swarm[ind].y, attr.x, attr.y)
-    attrvec = pnt()
-    if attrdist != 0:
-        if attrdist <= ATTRBOUNDRAD:
-            # distract
-            attrvec.x = -(attr.x - swarm[ind].x) / attrdist
-            attrvec.y = -(attr.y - swarm[ind].y) / attrdist
-        elif attrdist >= ATTRMAXRAD:
-            # attract
-            attrvec.x = (attr.x - swarm[ind].x) * attrdist
-            attrvec.y = (attr.y - swarm[ind].y) * attrdist
-
-    # Random vector
-    randvec = pnt(tanh(randpn()), tanh(randpn()))
-
-    # Adjust own vector
-    weightsum = 0.0
-    swarmV[ind].x *= WEIGHTSELFVECTOR
-    swarmV[ind].y *= WEIGHTSELFVECTOR
-    swarmV[ind].x += relcentvec.x * WEIGHTLOCALCENTER
-    swarmV[ind].y += relcentvec.y * WEIGHTLOCALCENTER
-    swarmV[ind].x += avgvec.x * WEIGHTLOCALVECTOR
-    swarmV[ind].y += avgvec.y * WEIGHTLOCALVECTOR
-    swarmV[ind].x += reltightvec.x * WEIGHTLOCALTIGHT
-    swarmV[ind].y += reltightvec.y * WEIGHTLOCALTIGHT
-    swarmV[ind].x += randvec.x * WEIGHTRAND
-    swarmV[ind].y += randvec.y * WEIGHTRAND
-    weightsum += WEIGHTSELFVECTOR + WEIGHTLOCALCENTER + WEIGHTLOCALVECTOR + WEIGHTLOCALTIGHT
-    if enableattr == True:
-        swarmV[ind].x += attrvec.x * WEIGHTATTR
-        swarmV[ind].y += attrvec.y * WEIGHTATTR
-        weightsum += WEIGHTATTR
-    # sub to weighted sum
-    if weightsum > 0:
-        swarmV[ind].x /= weightsum
-        swarmV[ind].y /= weightsum
-
-    # Vector rectify
-    swarmV[ind].x = RECTIFYFUNCTION(swarmV[ind].x)
-    swarmV[ind].y = RECTIFYFUNCTION(swarmV[ind].y)
-
-    # Vector turn
-    thetax = random() * ATTRRANDTURNFRAC
-    thetay = random() * ATTRRANDTURNFRAC
-    vx1 = swarmV[ind].x * cos(thetax) - swarmV[ind].y * sin(thetax)
-    vy1 = swarmV[ind].x * sin(thetay) + swarmV[ind].y * cos(thetay)
-    swarmV[ind].x = vx1
-    swarmV[ind].y = vy1
-
-    # Move
-    swarm[ind].x += swarmV[ind].x * SPEED
-    swarm[ind].y += swarmV[ind].y * SPEED
-
-# Update whole swarm
-def updateSwarm():
-    for ind in range(SWARMSIZE):
-        # Out of bound: reverse coords (finite universe)
-        SHIFT = random() * 4.0
-        # -
-        if swarm[ind].x < XLIM.l:
-            swarm[ind].x = XLIM.u - SHIFT
-        if swarm[ind].y < YLIM.l:
-            swarm[ind].y = YLIM.u - SHIFT
-        # +
-        if swarm[ind].x > XLIM.u:
-            swarm[ind].x = XLIM.l + SHIFT
-        if swarm[ind].y > YLIM.u:
-            swarm[ind].y = YLIM.l + SHIFT
-        updateFish(ind)
-
-# Update attractor
-#WARN: Might not adapt to new XLIM and YLIMs
-#BUG: Attr point move incorrect
-def updateAttr():
-    # Vector turn
-    theta = randpn() * pi * ATTRRANDTURNFRAC
-    v1 = pnt()
-    v1.x = attrV.x * cos(theta) - attrV.y * sin(theta)
-    v1.y = attrV.x * sin(theta) + attrV.y * cos(theta)
-
-    # Center rectify
-    cent = pnt(XLIM.u + XLIM.l, YLIM.u + YLIM.l)
-    '''
-    # Turn
-    if euclidDist(attr.x, attr.y, cent.x, cent.y) > ATTRCENTERFORCEMINDIST:
-        theta = pi / 2
-        vx1 += attrV.x * cos(theta) - attrV.y * sin(theta)
-        vy1 += attrV.x * sin(theta) + attrV.y * cos(theta)
-    '''
-    # Center force
-    centdist = euclidDist(attr.x, attr.y, cent.x, cent.y)
-    relcentvec = pnt(cent.x - attr.x, cent.y - attr.y)
-    relcentvec.x *= WEIGHTATTRCENTER 
-    relcentvec.y *= WEIGHTATTRCENTER
-
-    attrV.x += relcentvec.x
-    attrV.y += relcentvec.y
-
-    attrV.x = v1.x
-    attrV.y = v1.y
-
-    # Vector rectify
-    attrV.x = ATTRRECTIFYFUNCTION(attrV.x)
-    attrV.y = ATTRRECTIFYFUNCTION(attrV.y)
-
-    # Move
-    attr.x += attrV.x * ATTRSPEED
-    attr.y += attrV.y * ATTRSPEED
-
-    # Out of bound: reverse coords (finite universe)
-    SHIFT = random() * SHIFTFRAC
-    # -
-    if attr.x < XLIM.l:
-        attr.x = XLIM.u - SHIFT
-    if attr.y < YLIM.l:
-        attr.y = YLIM.u - SHIFT
-    # +
-    if attr.x > XLIM.u:
-        attr.x = XLIM.l + SHIFT
-    if attr.y > YLIM.u:
-        attr.y = YLIM.l + SHIFT
+# Update whole boid
+def updateBoid(plotmethod):
+    for ind in range(SWMSIZE):
+        updateBird(ind, plotmethod)
 
 # Click event
 def on_click(event):
@@ -264,44 +223,78 @@ def on_click(event):
         # Toggle plot local
         global localplot
         localplot = not localplot
-    elif event.button is MouseButton.RIGHT:
-        # Toggle attractor force
-        global enableattr
-        enableattr = not enableattr
+        print(f'localplot = {localplot}')
 
 def main():
     # Init fishes
-    #TEST: Might correct vector
-    vecmax = sqrt(1 / 2)
-    for i in range(SWARMSIZE):
-        swarm.append(pnt(XLIM.u * randpn() / INITRANGEFRAC, YLIM.u * randpn() / INITRANGEFRAC))
-        swarmV.append(pnt(randpn() * vecmax, randpn() * vecmax))
-    attr.x = randpn()
-    attr.y = randpn()
-    attrV.x = randpn()
-    attrV.y = randpn()
-
-    plt.connect('button_press_event', on_click) 
+    for i in range(SWMSIZE):
+        swm.append(pnt(LIM.xu * randpn() / INITRANGEFRAC, LIM.yu * randpn() / INITRANGEFRAC))
+        swmv.append(vec(randpn() * VECMAX, randpn() * VECMAX))
 
     # Draw plot
-    while True:
-        plt.cla()
-        updateSwarm()
-        if enableattr == True:
-            updateAttr()
-        plt.title('Swarm Simulation')
-        plt.xlim(XLIM.l, XLIM.u)
-        plt.ylim(YLIM.l, YLIM.u)
-        x_vals = [pnt.x for pnt in swarm]
-        y_vals = [pnt.y for pnt in swarm]
-        plt.xlabel(f'localPlot = {localplot}, attractorForce = {enableattr}')
-        if localplot == False:
-            plt.plot(x_vals, y_vals, 'b^')
-        if enableattr == True:
-            plt.plot(attr.x, attr.y, 'g.')
-        plt.draw()
-        plt.pause(TICKRATE)
+    if showmethod == 'matplotlib':
+        pltuse('TkAgg')
+        plt.connect('button_press_event', on_click) 
+        while True:
+            plt.cla()
+            updateBoid('matplotlib')
+            plt.title('Swarm Simulation')
+            plt.xlim(LIM.xl, LIM.xu)
+            plt.ylim(LIM.yl, LIM.yu)
+            x_vals = [pnt.x for pnt in swm]
+            y_vals = [pnt.y for pnt in swm]
+            if localplot == False:
+                plt.scatter(x_vals, y_vals, c = 'b', marker = '^')
+            plt.draw()
+            plt.pause(TICKRATE)
+    elif showmethod == 'pygame':
+        # Initialize Pygame
+        pygame.init()
+        screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        pygame.display.set_caption('Swarm Simulation')
+        clock = pygame.time.Clock()
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+            screen.fill(COLORBG)
+
+            # Update the swarm
+            updateBoid('pygame')
+            # Draw the swarm
+            for boid, boidv in zip(swm, swmv):
+                # Calculate the angle of the velocity vector
+                angle = headVec(boidv)
+                # Create a surface for the boid
+                boid_surface = pygame.Surface((10, 10))
+                boid_surface.set_colorkey((0, 0, 0))
+                boid_surface.fill((0, 0, 0))
+                points = [(5, 0), (8, 5), (2, 5)]
+                rotated_points = []
+                for point in points:
+                    rotated_x = point[0] - 5
+                    rotated_y = point[1] - 5
+                    new_x = rotated_x * math.cos(angle) - rotated_y * math.sin(angle) + 5
+                    new_y = rotated_x * math.sin(angle) + rotated_y * math.cos(angle) + 5
+                    rotated_points.append((new_x, new_y))
+                pygame.draw.polygon(boid_surface, (255, 255, 255), rotated_points)
+                # Draw the rotated surface
+                SCALE = 50
+                screen.blit(boid_surface, (int(boid.x * SCALE + SCREEN_WIDTH / 2 - 5), int(boid.y * SCALE + SCREEN_HEIGHT / 2 - 5)))
+
+            # Update the display
+            pygame.display.flip()
+            # Cap the frame rate
+            pygame.time.delay(int(TICKRATE * 1000))
+            clock.tick(60)
+        # Quit Pygame
+        pygame.quit()
+    else:
+        logging.error(f'Unknown plotmethod: {plotmethod}. ')
+    exit()
 
 if __name__ == '__main__':
     main()
+    exit()
 
