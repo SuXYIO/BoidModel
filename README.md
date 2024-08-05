@@ -1,6 +1,6 @@
-# SwarmModel
+# BoidModel
 
-A simple model for simulating __swarms__. 
+A simple implementation of the __boid__ algorithm. 
 
 ## Technical details
 
